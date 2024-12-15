@@ -57,7 +57,7 @@ const supportedDomains = {
     't.co',
     'xhslink.com',
     '163cn.tv',
-    'weixin.com'
+    'b23.tv'
   ],
   xhslink: 'xiaohongshu.com',
   weixin: 'weixin',
