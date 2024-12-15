@@ -15,7 +15,6 @@ async function handleRequest(request) {
     const inputText = formData.get('inputText')
 
     if (!inputText) {
-      // 如果输入无效，返回主页并显示错误提示
       return new Response(renderHtmlPage('请输入有效的文本内容'), {
         headers: { 'Content-Type': 'text/html' }
       })
@@ -30,7 +29,13 @@ async function handleRequest(request) {
         })
       }
 
-      const finalUrl = await resolveUrl(extractedUrl)
+      let finalUrl;
+      if (isShortLink(extractedUrl)) {
+        finalUrl = await resolveUrl(extractedUrl) // 解析短链接
+      } else {
+        finalUrl = extractedUrl // 原始链接直接使用
+      }
+
       const cleanUrl = await processUrlBasedOnDomain(finalUrl)
 
       return new Response(renderResultPage(cleanUrl), {
@@ -46,12 +51,36 @@ async function handleRequest(request) {
   }
 }
 
+// 支持的链接域名列表
+const supportedDomains = {
+  shortLinks: [
+    't.co',
+    'xhslink.com',
+    '163cn.tv',
+    'weixin.com'
+  ],
+  xhslink: 'xiaohongshu.com',
+  weixin: 'weixin',
+  music163: 'music.163.com',
+  bsite: 'bilibili.com',
+  zhihu: 'zhihu.com',
+  other: 'default'
+}
+
+// 判断是否为短链接
+function isShortLink(url) {
+  const shortLinkRegex = new RegExp(`(${supportedDomains.shortLinks.join('|')})`);
+  return shortLinkRegex.test(url);
+}
+
+// 提取URL
 function extractUrlFromText(text) {
   const urlRegex = /(https?:\/\/[^\s]+)/g
   const matches = text.match(urlRegex)
   return matches ? matches[0] : null
 }
 
+// 解析短链接
 async function resolveUrl(url) {
   try {
     const response = await fetch(url, {
@@ -67,63 +96,59 @@ async function resolveUrl(url) {
   }
 }
 
+// 根据域名处理URL
 async function processUrlBasedOnDomain(url) {
   const parsedUrl = new URL(url)
   const hostname = parsedUrl.hostname
 
-  if (hostname === 'x.com') {
-    // 将 x.com 链接替换为 fixupx.com
-    parsedUrl.hostname = 'fixupx.com'
-    url = parsedUrl.toString()
-  }
-
-  if (hostname.includes('xiaohongshu') || hostname.includes('xhslink')) {
-    // 获取并保留 xsec_token 参数
+  // 小红书短链处理
+  if (hostname.includes(supportedDomains.xhslink)) {
     const xsecToken = parsedUrl.searchParams.get('xsec_token');
-    // 清空所有查询参数
     parsedUrl.search = '';
-    // 重新设置 xsec_token 参数
     if (xsecToken) {
       parsedUrl.searchParams.set('xsec_token', xsecToken);
     }
-    // 添加 = 和 xsec_source=pc_user
     parsedUrl.search += '&xsec_source=pc_user';
     return parsedUrl.toString();
   }
-   else if (hostname.includes('weixin')) {
-    // 微信处理逻辑，保留到 &chksm 前的内容
+  
+  // 微信公众号链接处理
+  if (hostname.includes(supportedDomains.weixin)) {
     const chksmIndex = url.indexOf('&chksm')
     if (chksmIndex !== -1) {
       return url.substring(0, chksmIndex)
     } else {
-      return url // 如果没有 &chksm，保留整个URL
+      return url
     }
-  } else if (hostname.includes('music.163.com')) {
-    // 网易云音乐处理逻辑，删除 &userid 及其后面的部分
+  }
+  
+  // 网易云音乐链接处理
+  if (hostname.includes(supportedDomains.music163)) {
     const useridIndex = url.indexOf('&')
     if (useridIndex !== -1) {
       return url.substring(0, useridIndex)
     } else {
-      return url // 如果没有 &userid，保留整个URL
+      return url
     }
-  } else if (hostname.includes('163cn.tv')) {
-    // 解析短链接后再进行匹配删除第一个 & 及其后的内容
+  }
+  
+  // 其他短链处理
+  if (hostname.includes(supportedDomains.shortLinks)) {
     const resolvedUrl = await resolveUrl(url)
     const firstAmpersandIndex = resolvedUrl.indexOf('&')
     if (firstAmpersandIndex !== -1) {
       return resolvedUrl.substring(0, firstAmpersandIndex)
     } else {
-      return resolvedUrl // 如果没有 &，保留整个URL
+      return resolvedUrl
     }
-  } else {
-    // 默认处理逻辑，清空查询参数
-    parsedUrl.search = ''
-    return parsedUrl.toString()
   }
+
+  // 默认处理逻辑：清空查询参数
+  parsedUrl.search = ''
+  return parsedUrl.toString()
 }
 
-
-
+// 渲染主页
 function renderHtmlPage(errorMessage = '') {
   return `
     <!DOCTYPE html>
@@ -153,7 +178,7 @@ function renderHtmlPage(errorMessage = '') {
                 text-align: center;
             }
             textarea, button {
-                width: calc(100% - 20px); /* 为了给工具提示留出空间 */
+                width: calc(100% - 20px);
                 padding: 10px;
                 margin: 10px 0;
                 border-radius: 4px;
@@ -161,7 +186,7 @@ function renderHtmlPage(errorMessage = '') {
                 font-size: 16px;
             }
             button {
-                width: 100%; /* 按钮仍然占满容器宽度 */
+                width: 100%;
                 background-color: #007BFF;
                 color: white;
                 border: none;
@@ -191,15 +216,13 @@ function renderHtmlPage(errorMessage = '') {
                 <button type="submit">处理文本</button>
             </form>
             <div class="info">
-               <p>反向溯源：<a href="https://uid.ejfkdev.com/">https://uid.ejfkdev.com/</a></p>
-                <p>支持的网站：</p>
+                <p>支持的链接：</p>
                 <ul>
                     <li>小红书及其短链</li>
                     <li>微信公众号</li>
                     <li>网易云音乐及其短链</li>
                     <li>B站及其短链</li>
                     <li>知乎</li>
-                    <li>X</li>
                     <li>其他域名采用默认处理逻辑（清空第一个?后的查询参数）</li>
                 </ul>
             </div>
@@ -209,6 +232,7 @@ function renderHtmlPage(errorMessage = '') {
   `
 }
 
+// 渲染处理结果页面
 function renderResultPage(cleanUrl) {
   return `
     <!DOCTYPE html>
@@ -253,14 +277,11 @@ function renderResultPage(cleanUrl) {
                 margin-top: 20px;
             }
             button {
-                width: 100%; /* 按钮仍然占满容器宽度 */
+                width: 100%;
                 background-color: #007BFF;
                 color: white;
                 border: none;
                 cursor: pointer;
-                padding: 10px;
-                margin: 5px 0;
-                border-radius: 4px;
             }
             button:hover {
                 background-color: #0056b3;
@@ -269,25 +290,16 @@ function renderResultPage(cleanUrl) {
     </head>
     <body>
         <div class="container">
-            <h2>处理完成</h2>
+            <h2>处理结果</h2>
+            <p>已成功去除追踪参数！</p>
             <div class="result">
-                <p>清理后的URL：</p>
-                <a href="${cleanUrl}" target="_blank" id="cleanUrl">${cleanUrl}</a>
+                <a href="${cleanUrl}" target="_blank">${cleanUrl}</a>
             </div>
             <div class="button-container">
-                <button id="copyButton">复制URL</button>
-                <button onclick="window.location.href = '/'">返回</button>
+                <form method="POST" action="/">
+                    <button type="submit">返回</button>
+                </form>
             </div>
-            <div id="copyMessage" style="color: green; margin-top: 10px; display: none;">已复制到剪贴板!</div>
-            <script>
-                const copyButton = document.getElementById('copyButton');
-                const cleanUrl = document.getElementById('cleanUrl').textContent;
-                copyButton.addEventListener('click', () => {
-                    navigator.clipboard.writeText(cleanUrl).then(() => {
-                        document.getElementById('copyMessage').style.display = 'block';
-                    });
-                });
-            </script>
         </div>
     </body>
     </html>
