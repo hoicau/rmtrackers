@@ -132,6 +132,13 @@ async function processUrlBasedOnDomain(url) {
       return url
     }
   }
+
+    // 推特处理
+  if (hostname === 'x.com' || hostname === 'www.x.com') {
+    parsedUrl.hostname = 'fixupx.com'; // 明确修改 URL 对象的主机名
+    parsedUrl.search = '';             // 同时在此处清空查询参数
+    return parsedUrl.toString();       // 直接返回修改后的结果
+  }
   
   // 其他短链处理
   if (hostname.includes(supportedDomains.shortLinks)) {
