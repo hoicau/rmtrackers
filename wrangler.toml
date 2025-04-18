@@ -1,4 +1,4 @@
 # wrangler.toml
-name = "tracker-remover"
+name = "tracker_remover"
 main = "worker.js"
 compatibility_date = "2025-04-18" 
