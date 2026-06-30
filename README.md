@@ -1,8 +1,5 @@
 # tracker-remover
-Demo:https://tr.lizi.su/
 
-去除链接追踪参数，可运行在Cloudflare Workers上
+Forked from [leez233/tracker-remover](https://github.com/leez233/tracker-remover), with English, Simplified Chinese and Traditional Chinese support.
 
-支持小红书、b站等带文案粘贴，懒癌友好
-
-关于追踪参数泄露隐私的问题：https://uid.ejfkdev.com/
+Also thanks to Claude Code.

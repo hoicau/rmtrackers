@@ -3,30 +3,27 @@ addEventListener('fetch', event => {
 })
 
 async function handleRequest(request) {
-  const { method, url } = request
-  const parsedUrl = new URL(url)
+  const { method } = request
+  const parsedUrl = new URL(request.url)
 
   if (method === 'GET' && parsedUrl.pathname === '/') {
-    return new Response(renderHtmlPage(), {
-      headers: { 'Content-Type': 'text/html' }
-    })
+    const locale = resolveLocale(request, parsedUrl)
+    return htmlResponse(renderHtmlPage('', locale), locale)
   } else if (method === 'POST' && parsedUrl.pathname === '/process') {
     const formData = await request.formData()
     const inputText = formData.get('inputText')
+    const locale = resolveLocale(request, parsedUrl, formData.get('lang'))
+    const t = translations[locale]
 
     if (!inputText) {
-      return new Response(renderHtmlPage('请输入有效的文本内容'), {
-        headers: { 'Content-Type': 'text/html' }
-      })
+      return htmlResponse(renderHtmlPage(t.errEmpty, locale), locale)
     }
 
     try {
       const extractedUrl = extractUrlFromText(inputText)
 
       if (!extractedUrl) {
-        return new Response(renderHtmlPage('未在文本中找到有效链接'), {
-          headers: { 'Content-Type': 'text/html' }
-        })
+        return htmlResponse(renderHtmlPage(t.errNoLink, locale), locale)
       }
 
       let finalUrl;
@@ -36,19 +33,148 @@ async function handleRequest(request) {
         finalUrl = extractedUrl // 原始链接直接使用
       }
 
-      const cleanUrl = await processUrlBasedOnDomain(finalUrl)
+      const cleanUrl = forceHttps(await processUrlBasedOnDomain(finalUrl))
 
-      return new Response(renderResultPage(cleanUrl), {
-        headers: { 'Content-Type': 'text/html' }
-      })
+      return htmlResponse(renderResultPage(cleanUrl, locale), locale)
     } catch (error) {
-      return new Response(renderHtmlPage('处理URL时出错，请检查链接是否有效。'), {
-        headers: { 'Content-Type': 'text/html' }
-      })
+      return htmlResponse(renderHtmlPage(t.errProcess, locale), locale)
     }
   } else {
     return new Response('Not Found', { status: 404 })
   }
+}
+
+// 统一构造 HTML 响应，并把当前语言写入 Cookie 以便记忆
+function htmlResponse(html, locale) {
+  return new Response(html, {
+    headers: {
+      'Content-Type': 'text/html; charset=UTF-8',
+      'Set-Cookie': `lang=${locale}; Path=/; Max-Age=31536000; SameSite=Lax`
+    }
+  })
+}
+
+// ============================ 多语言文案 ============================
+const DEFAULT_LOCALE = 'zh-Hans'
+
+const translations = {
+  'zh-Hans': {
+    htmlLang: 'zh-Hans',
+    homeTitle: '去除URL追踪工具',
+    resultTitle: '清理结果',
+    heading: '去链接追踪',
+    placeholder: '粘贴包含链接的文本',
+    submit: '去你的追踪参数！',
+    supportedTitle: '支持的链接',
+    platforms: {
+      bilibili: '哔哩哔哩',
+      xiaohongshu: '小红书',
+      weixin: '微信公众号',
+      music163: '网易云音乐',
+      zhihu: '知乎'
+    },
+    tagShortLink: '含短链',
+    supportedNote: '其他链接默认清除第一个?（英文问号）后的追踪参数。',
+    resultHeading: '清理完成',
+    resultLabel: '清理后的URL：',
+    copy: '复制URL',
+    back: '返回',
+    copied: '已复制到剪贴板！',
+    forked: '源代码：',
+    errEmpty: '请输入有效的文本内容',
+    errNoLink: '未在文本中找到有效链接',
+    errProcess: '处理URL时出错，请检查链接是否有效。'
+  },
+  'zh-Hant': {
+    htmlLang: 'zh-Hant',
+    homeTitle: '去除URL追蹤工具',
+    resultTitle: '清理結果',
+    heading: '去連結追蹤',
+    placeholder: '貼上包含連結的文字',
+    submit: '去你的追蹤參數！',
+    supportedTitle: '支援的連結',
+    platforms: {
+      bilibili: '嗶哩嗶哩',
+      xiaohongshu: '小紅書',
+      weixin: '微信公眾號',
+      music163: '網易雲音樂',
+      zhihu: '知乎'
+    },
+    tagShortLink: '含短連結',
+    supportedNote: '其他連結預設清除第一個?（英文問號）後的追蹤參數。',
+    resultHeading: '清理完成',
+    resultLabel: '清理後的 URL：',
+    copy: '複製 URL',
+    back: '返回',
+    copied: '已複製到剪貼簿！',
+    forked: '原始碼：',
+    errEmpty: '請輸入有效的文字內容',
+    errNoLink: '未在文字中找到有效連結',
+    errProcess: '處理 URL 時發生錯誤，請檢查連結是否有效。'
+  },
+  'en': {
+    htmlLang: 'en',
+    homeTitle: 'URL Tracker Remover',
+    resultTitle: 'Result',
+    heading: 'Strip Link Trackers',
+    placeholder: 'Paste text containing a link',
+    submit: 'Strip the trackers!',
+    supportedTitle: 'Supported links',
+    platforms: {
+      bilibili: 'Bilibili',
+      xiaohongshu: 'Xiaohongshu',
+      weixin: 'WeChat Official Account',
+      music163: 'NetEase Cloud Music',
+      zhihu: 'Zhihu'
+    },
+    tagShortLink: 'incl. short links',
+    supportedNote: 'For other links, tracking parameters after the first "?" are removed by default.',
+    resultHeading: 'Done',
+    resultLabel: 'Cleaned URL:',
+    copy: 'Copy URL',
+    back: 'Back',
+    copied: 'Copied to clipboard!',
+    forked: 'Source code:',
+    errEmpty: 'Please enter some text.',
+    errNoLink: 'No valid link found in the text.',
+    errProcess: 'Something went wrong. Please check that the link is valid.'
+  }
+}
+
+// 把任意语言标签归一化为受支持的 locale
+function normalizeLocale(value) {
+  if (!value) return null
+  const v = value.toLowerCase()
+  if (v.includes('zh')) {
+    if (v.includes('tw') || v.includes('hk') || v.includes('mo') || v.includes('hant')) return 'zh-Hant'
+    return 'zh-Hans'
+  }
+  if (v.includes('en')) return 'en'
+  return null
+}
+
+// 读取指定 Cookie
+function getCookie(request, name) {
+  const cookie = request.headers.get('Cookie') || ''
+  const match = cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)'))
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+// 语言判定：?lang= 手动选择 → Cookie 记忆 → 浏览器 Accept-Language → 默认
+function resolveLocale(request, parsedUrl, formLang) {
+  const explicit = normalizeLocale(parsedUrl.searchParams.get('lang') || formLang)
+  if (explicit) return explicit
+
+  const fromCookie = normalizeLocale(getCookie(request, 'lang'))
+  if (fromCookie) return fromCookie
+
+  const acceptLanguage = request.headers.get('Accept-Language') || ''
+  for (const part of acceptLanguage.split(',')) {
+    const norm = normalizeLocale(part.split(';')[0].trim())
+    if (norm) return norm
+  }
+
+  return DEFAULT_LOCALE
 }
 
 // 支持的链接域名列表
@@ -63,7 +189,7 @@ const supportedDomains = {
   xhslink: 'xiaohongshu.com',
   weixin: 'weixin',
   music163: 'music.163.com',
-  bsite: 'bilibili.com',
+  bilibili: 'bilibili.com',
   zhihu: 'zhihu.com',
   other: 'default'
 }
@@ -81,11 +207,13 @@ function extractUrlFromText(text) {
   return matches ? matches[0] : null
 }
 
-// 解析短链接
+// 解析短链接：跟随跳转拿到最终 URL
+// 注意：部分短链服务（如 xhslink.com）对 HEAD 请求返回 404，只有 GET 才会发出跳转，
+// 因此这里统一使用 GET（不读取响应体，仅取最终 URL）。
 async function resolveUrl(url) {
   try {
     const response = await fetch(url, {
-      method: 'HEAD',
+      method: 'GET',
       redirect: 'follow',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0'
@@ -94,6 +222,17 @@ async function resolveUrl(url) {
     return response.url
   } catch (error) {
     throw new Error('无法解析短链接')
+  }
+}
+
+// 强制使用 https，避免把 http 链接返回给用户
+function forceHttps(url) {
+  try {
+    const parsedUrl = new URL(url)
+    parsedUrl.protocol = 'https:'
+    return parsedUrl.toString()
+  } catch (error) {
+    return url
   }
 }
 
@@ -112,7 +251,7 @@ async function processUrlBasedOnDomain(url) {
     parsedUrl.search += '&xsec_source=pc_user';
     return parsedUrl.toString();
   }
-  
+
   // 微信公众号链接处理
   if (hostname.includes(supportedDomains.weixin)) {
     const chksmIndex = url.indexOf('&chksm')
@@ -122,7 +261,7 @@ async function processUrlBasedOnDomain(url) {
       return url
     }
   }
-  
+
   // 网易云音乐链接处理
   if (hostname.includes(supportedDomains.music163)) {
     const useridIndex = url.indexOf('&')
@@ -139,7 +278,7 @@ async function processUrlBasedOnDomain(url) {
     parsedUrl.search = '';             // 同时在此处清空查询参数
     return parsedUrl.toString();       // 直接返回修改后的结果
   }
-  
+
   // 其他短链处理
   if (hostname.includes(supportedDomains.shortLinks)) {
     const resolvedUrl = await resolveUrl(url)
@@ -156,15 +295,37 @@ async function processUrlBasedOnDomain(url) {
   return parsedUrl.toString()
 }
 
+// 语言切换器（仅主页显示）
+function renderLangSwitch(current) {
+  const langs = [['zh-Hans', '简'], ['zh-Hant', '繁'], ['en', 'EN']]
+  const links = langs.map(([code, label]) =>
+    `<a href="/?lang=${code}"${code === current ? ' class="active"' : ''}>${label}</a>`
+  ).join('')
+  return `<div class="lang-switch">${links}</div>`
+}
+
 // 渲染主页
-function renderHtmlPage(errorMessage = '') {
+function renderHtmlPage(errorMessage = '', locale = DEFAULT_LOCALE) {
+  const t = translations[locale]
+
+  const platforms = [
+    ['bilibili', true],
+    ['music163', true],
+    ['xiaohongshu', true],
+    ['weixin', false],
+    ['zhihu', false]
+  ]
+  const rows = platforms.map(([key, short]) =>
+    `<li><span class="name">${t.platforms[key]}</span><span class="tag">${short ? t.tagShortLink : ''}</span></li>`
+  ).join('\n                    ')
+
   return `
     <!DOCTYPE html>
-    <html lang="zh-CN">
+    <html lang="${t.htmlLang}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>去除URL追踪工具</title>
+        <title>${t.homeTitle}</title>
         <style>
             body {
                 font-family: Arial, sans-serif;
@@ -184,6 +345,23 @@ function renderHtmlPage(errorMessage = '') {
                 box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
                 width: 320px;
                 text-align: center;
+            }
+            .lang-switch {
+                text-align: right;
+                font-size: 12px;
+                margin-bottom: 4px;
+            }
+            .lang-switch a {
+                color: #aaa;
+                text-decoration: none;
+                margin-left: 10px;
+            }
+            .lang-switch a:hover {
+                color: #007BFF;
+            }
+            .lang-switch a.active {
+                color: #007BFF;
+                font-weight: 600;
             }
             textarea, button {
                 width: calc(100% - 20px);
@@ -207,32 +385,85 @@ function renderHtmlPage(errorMessage = '') {
                 color: red;
                 margin-bottom: 10px;
             }
-            .info {
+            .supported {
                 margin-top: 20px;
-                font-size: 14px;
-                color: #555;
                 text-align: left;
+            }
+            .supported-title {
+                font-size: 13px;
+                color: #888;
+                margin: 0 0 8px;
+            }
+            .rows {
+                list-style: none;
+                padding: 0;
+                margin: 0;
+            }
+            .rows li {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 9px 0;
+                border-bottom: 1px solid #f0f0f0;
+                font-size: 13px;
+            }
+            .rows li:last-child {
+                border-bottom: none;
+            }
+            .rows .name {
+                color: #333;
+            }
+            .rows .tag {
+                color: #aaa;
+                font-size: 12px;
+            }
+            .supported-note {
+                margin-top: 12px;
+                font-size: 12px;
+                color: #aaa;
+                line-height: 1.5;
+            }
+            .footer {
+                margin-top: 24px;
+                padding-top: 16px;
+                border-top: 1px solid #f0f0f0;
+                font-size: 12px;
+                color: #aaa;
+                text-align: center;
+                line-height: 1.9;
+            }
+            .footer p {
+                margin: 0;
+            }
+            .footer a {
+                color: #007BFF;
+                text-decoration: none;
+            }
+            .footer a:hover {
+                text-decoration: underline;
             }
         </style>
     </head>
     <body>
         <div class="container">
-            <h2>去除追踪参数</h2>
+            ${renderLangSwitch(locale)}
+            <h2>${t.heading}</h2>
             ${errorMessage ? `<div class="error">${errorMessage}</div>` : ''}
             <form method="POST" action="/process">
-                <textarea name="inputText" placeholder="粘贴包含链接的文本" rows="6" required></textarea>
-                <button type="submit">处理文本</button>
+                <input type="hidden" name="lang" value="${locale}">
+                <textarea name="inputText" placeholder="${t.placeholder}" rows="6" required></textarea>
+                <button type="submit">${t.submit}</button>
             </form>
-            <div class="info">
-                <p>支持的链接：</p>
-                <ul>
-                    <li>小红书及其短链</li>
-                    <li>微信公众号</li>
-                    <li>网易云音乐及其短链</li>
-                    <li>B站及其短链</li>
-                    <li>知乎</li>
-                    <li>其他域名采用默认处理逻辑（清空第一个?后的查询参数）</li>
+            <div class="supported">
+                <p class="supported-title">${t.supportedTitle}</p>
+                <ul class="rows">
+                    ${rows}
                 </ul>
+                <p class="supported-note">${t.supportedNote}</p>
+            </div>
+            <div class="footer">
+                <p>© 2026 澈海秋光</p>
+                <p>${t.forked} <a href="https://github.com/hoicau/rmtrackers" target="_blank" rel="noopener">leez233/hoicau/rmtrackers</a></p>
             </div>
         </div>
     </body>
@@ -240,15 +471,17 @@ function renderHtmlPage(errorMessage = '') {
   `
 }
 
-// 渲染处理结果页面
-function renderResultPage(cleanUrl) {
+// 渲染清理结果页面
+function renderResultPage(cleanUrl, locale = DEFAULT_LOCALE) {
+  const t = translations[locale]
+
   return `
     <!DOCTYPE html>
-    <html lang="zh-CN">
+    <html lang="${t.htmlLang}">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>处理结果</title>
+        <title>${t.resultTitle}</title>
         <style>
             body {
                 font-family: Arial, sans-serif;
@@ -299,20 +532,39 @@ function renderResultPage(cleanUrl) {
             button:hover {
                 background-color: #0056b3;
             }
+            .footer {
+                margin-top: 24px;
+                padding-top: 16px;
+                border-top: 1px solid #f0f0f0;
+                font-size: 12px;
+                color: #aaa;
+                text-align: center;
+                line-height: 1.9;
+            }
+            .footer p {
+                margin: 0;
+            }
+            .footer a {
+                color: #007BFF;
+                text-decoration: none;
+            }
+            .footer a:hover {
+                text-decoration: underline;
+            }
         </style>
     </head>
     <body>
         <div class="container">
-            <h2>处理完成</h2>
+            <h2>${t.resultHeading}</h2>
             <div class="result">
-                <p>清理后的URL：</p>
+                <p>${t.resultLabel}</p>
                 <a href="${cleanUrl}" target="_blank" id="cleanUrl">${cleanUrl}</a>
             </div>
             <div class="button-container">
-                <button id="copyButton">复制URL</button>
-                <button onclick="window.location.href = '/'">返回</button>
+                <button id="copyButton">${t.copy}</button>
+                <button onclick="window.location.href = '/'">${t.back}</button>
             </div>
-            <div id="copyMessage" style="color: green; margin-top: 10px; display: none;">已复制到剪贴板!</div>
+            <div id="copyMessage" style="color: green; margin-top: 10px; display: none;">${t.copied}</div>
             <script>
                 const copyButton = document.getElementById('copyButton');
                 const cleanUrl = document.getElementById('cleanUrl').textContent;
@@ -322,6 +574,10 @@ function renderResultPage(cleanUrl) {
                     });
                 });
             </script>
+            <div class="footer">
+                <p>© 2026 澈海秋光</p>
+                <p>${t.forked} <a href="https://github.com/leez233/tracker-remover" target="_blank" rel="noopener">leez233/tracker-remover</a></p>
+            </div>
         </div>
     </body>
     </html>
