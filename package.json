@@ -1,0 +1,14 @@
+{
+  "name": "rmtrackers",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker that strips tracking parameters from shared links (Bilibili, Xiaohongshu, WeChat, NetEase Cloud Music, Zhihu, X/Twitter and more).",
+  "scripts": {
+    "dev": "wrangler dev",
+    "start": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

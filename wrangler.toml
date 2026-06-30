@@ -1,0 +1,6 @@
+name = "rmtrackers"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+
+# Serve the Worker on workers.dev while you don't have a custom domain.
+workers_dev = true
