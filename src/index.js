@@ -82,7 +82,7 @@ const translations = {
     copy: '复制URL',
     back: '返回',
     copied: '已复制到剪贴板！',
-    forked: '源代码：',
+    source: '源代码：',
     errEmpty: '请输入有效的文本内容',
     errNoLink: '未在文本中找到有效链接',
     errProcess: '处理URL时出错，请检查链接是否有效。'
@@ -109,7 +109,7 @@ const translations = {
     copy: '複製 URL',
     back: '返回',
     copied: '已複製到剪貼簿！',
-    forked: '原始碼：',
+    source: '原始碼：',
     errEmpty: '請輸入有效的文字內容',
     errNoLink: '未在文字中找到有效連結',
     errProcess: '處理 URL 時發生錯誤，請檢查連結是否有效。'
@@ -136,7 +136,7 @@ const translations = {
     copy: 'Copy URL',
     back: 'Back',
     copied: 'Copied to clipboard!',
-    forked: 'Source code:',
+    source: 'Source code:',
     errEmpty: 'Please enter some text.',
     errNoLink: 'No valid link found in the text.',
     errProcess: 'Something went wrong. Please check that the link is valid.'
@@ -465,7 +465,7 @@ function renderHtmlPage(errorMessage = '', locale = DEFAULT_LOCALE) {
             </div>
             <div class="footer">
                 <p>© 2026 澈海秋光</p>
-                <p>${t.forked} <a href="https://github.com/hoicau/rmtrackers" target="_blank" rel="noopener">leez233/hoicau/rmtrackers</a></p>
+                <p>${t.source} <a href="https://github.com/hoicau/rmtrackers" target="_blank" rel="noopener">hoicau/rmtrackers</a></p>
             </div>
         </div>
     </body>
@@ -578,7 +578,7 @@ function renderResultPage(cleanUrl, locale = DEFAULT_LOCALE) {
             </script>
             <div class="footer">
                 <p>© 2026 澈海秋光</p>
-                <p>${t.forked} <a href="https://github.com/leez233/tracker-remover" target="_blank" rel="noopener">leez233/tracker-remover</a></p>
+                <p>${t.source} <a href="https://github.com/hoicau/rmtrackers" target="_blank" rel="noopener">hoicau/rmtrackers</a></p>
             </div>
         </div>
     </body>
