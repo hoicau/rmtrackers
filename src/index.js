@@ -184,6 +184,7 @@ const supportedDomains = {
   shortLinks: [
     't.co',
     'xhslink.com',
+    'xhslink.cn',
     '163cn.tv',
     'bili2233.cn',
     'b23.tv'
@@ -210,7 +211,7 @@ function extractUrlFromText(text) {
 }
 
 // 解析短链接：跟随跳转拿到最终 URL
-// 注意：部分短链服务（如 xhslink.com）对 HEAD 请求返回 404，只有 GET 才会发出跳转，
+// 注意：部分短链服务（如 xhslink.com / xhslink.cn）对 HEAD 请求返回 404，只有 GET 才会发出跳转，
 // 因此这里统一使用 GET（不读取响应体，仅取最终 URL）。
 async function resolveUrl(url) {
   try {
@@ -266,6 +267,13 @@ async function processUrlBasedOnDomain(url) {
 
   // 网易云音乐链接处理
   if (hostname.includes(supportedDomains.music163)) {
+    const contentId = parsedUrl.searchParams.get('id')
+    if (contentId) {
+      parsedUrl.search = ''
+      parsedUrl.searchParams.set('id', contentId)
+      return parsedUrl.toString()
+    }
+
     const useridIndex = url.indexOf('&')
     if (useridIndex !== -1) {
       return url.substring(0, useridIndex)
