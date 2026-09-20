@@ -199,8 +199,63 @@ const supportedDomains = {
 
 // 判断是否为短链接
 function isShortLink(url) {
-  const shortLinkRegex = new RegExp(`(${supportedDomains.shortLinks.join('|')})`);
-  return shortLinkRegex.test(url);
+  const hostname = new URL(url).hostname
+  return supportedDomains.shortLinks.some(domain => matchesDomain(hostname, domain))
+}
+
+function matchesDomain(hostname, domain) {
+  return hostname === domain || hostname.endsWith(`.${domain}`)
+}
+
+function isXiaohongshuShortLink(url) {
+  return ['xhslink.com', 'xhslink.cn'].some(domain => matchesDomain(url.hostname, domain))
+}
+
+// 登录页可能把原始内容地址保存在 redirectPath 中，只接受站内内容地址。
+function getXiaohongshuContentUrl(url) {
+  if (!matchesDomain(url.hostname, supportedDomains.xhslink)) return null
+  let target = url
+  if (/^\/login\/?$/.test(url.pathname)) {
+    const redirectPath = url.searchParams.get('redirectPath')
+    if (!redirectPath) return null
+    try {
+      target = new URL(redirectPath, url)
+    } catch {
+      return null
+    }
+  }
+  if (!['http:', 'https:'].includes(target.protocol) ||
+      !matchesDomain(target.hostname, supportedDomains.xhslink) ||
+      target.username || target.password) return null
+  return /^\/(?:explore|discovery\/item|user\/profile)\/[a-zA-Z0-9]+(?:\/|$)/.test(target.pathname)
+    ? target : null
+}
+
+// 在短链首次指向内容时停止，避免请求内容页后继续跳到登录或风控页。
+async function resolveXiaohongshuUrl(url) {
+  let current = new URL(url)
+  const visited = new Set()
+  for (let hop = 0; hop <= 10; hop++) {
+    const contentUrl = getXiaohongshuContentUrl(current)
+    if (contentUrl) return contentUrl.toString()
+    if (hop === 10 || !['http:', 'https:'].includes(current.protocol) ||
+        !isXiaohongshuShortLink(current) || current.username || current.password ||
+        visited.has(current.href)) break
+    visited.add(current.href)
+    const response = await fetch(current.href, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0'
+      },
+      signal: AbortSignal.timeout(10000)
+    })
+    const location = response.headers.get('Location')
+    await response.body?.cancel()
+    if (![301, 302, 303, 307, 308].includes(response.status) || !location) break
+    current = new URL(location, current)
+  }
+  throw new Error('无法解析小红书内容链接')
 }
 
 // 提取URL
@@ -210,11 +265,14 @@ function extractUrlFromText(text) {
   return matches ? matches[0] : null
 }
 
-// 解析短链接：跟随跳转拿到最终 URL
+// 解析短链接：小红书在内容地址处停止，其他服务跟随跳转拿到最终 URL。
 // 注意：部分短链服务（如 xhslink.com / xhslink.cn）对 HEAD 请求返回 404，只有 GET 才会发出跳转，
 // 因此这里统一使用 GET（不读取响应体，仅取最终 URL）。
 async function resolveUrl(url) {
   try {
+    if (isXiaohongshuShortLink(new URL(url))) {
+      return await resolveXiaohongshuUrl(url)
+    }
     const response = await fetch(url, {
       method: 'GET',
       redirect: 'follow',
@@ -244,15 +302,18 @@ async function processUrlBasedOnDomain(url) {
   const parsedUrl = new URL(url)
   const hostname = parsedUrl.hostname
 
-  // 小红书短链处理
-  if (hostname.includes(supportedDomains.xhslink)) {
-    const xsecToken = parsedUrl.searchParams.get('xsec_token');
-    parsedUrl.search = '';
-    if (xsecToken) {
-      parsedUrl.searchParams.set('xsec_token', xsecToken);
+  // 保留访问所需参数及其原始来源，不把登录或风控页当作清理结果。
+  if (matchesDomain(hostname, supportedDomains.xhslink)) {
+    const contentUrl = getXiaohongshuContentUrl(parsedUrl)
+    if (!contentUrl) throw new Error('无效的小红书内容链接')
+    const accessParams = new URLSearchParams()
+    for (const key of ['xsec_token', 'xsec_source']) {
+      const value = contentUrl.searchParams.get(key)
+      if (value) accessParams.set(key, value)
     }
-    parsedUrl.search += '&xsec_source=pc_user';
-    return parsedUrl.toString();
+    contentUrl.search = accessParams.toString()
+    contentUrl.hash = ''
+    return contentUrl.toString()
   }
 
   // 微信公众号链接处理

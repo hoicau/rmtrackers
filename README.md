@@ -32,6 +32,14 @@ Requires [Node.js](https://nodejs.org/) and npm.
 
 ```sh
 npm install
+npm test         # run link-resolution regression tests (Node.js 20+)
 npm run dev      # start a local dev server via Wrangler
 npm run deploy   # deploy to your Cloudflare account
 ```
+
+Xiaohongshu short links are resolved one redirect at a time, stopping at the
+first note or profile URL so a later login redirect cannot replace it. Pasted
+login URLs with a valid Xiaohongshu content URL in `redirectPath` are also
+supported. The original `xsec_token` and `xsec_source` are preserved; other query
+parameters are removed. Login or security pages without a recoverable content
+URL produce an error. Cleaned links remain subject to Xiaohongshu's access rules.
