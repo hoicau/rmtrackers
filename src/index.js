@@ -211,6 +211,37 @@ function isXiaohongshuShortLink(url) {
   return ['xhslink.com', 'xhslink.cn'].some(domain => matchesDomain(url.hostname, domain))
 }
 
+function isBilibiliShortLink(url) {
+  return ['b23.tv', 'bili2233.cn'].some(domain => matchesDomain(url.hostname, domain))
+}
+
+// 只请求短链，拿到 Bilibili 地址即停止，避免视频页的风控或后续跳转影响解析。
+async function resolveBilibiliUrl(url) {
+  let current = new URL(url)
+  const visited = new Set()
+  for (let hop = 0; hop <= 10; hop++) {
+    if (!['http:', 'https:'].includes(current.protocol) ||
+        current.username || current.password) break
+    if (matchesDomain(current.hostname, supportedDomains.bilibili)) return current.href
+    if (hop === 10 || !isBilibiliShortLink(current) || visited.has(current.href)) break
+    visited.add(current.href)
+    const response = await fetch(current.href, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0'
+      },
+      signal: AbortSignal.timeout(10000)
+    })
+    const location = response.headers.get('Location')
+    // 清理响应体失败不应覆盖已经收到的状态码和 Location。
+    try { await response.body?.cancel() } catch {}
+    if (![301, 302, 303, 307, 308].includes(response.status) || !location) break
+    current = new URL(location, current)
+  }
+  throw new Error('无法解析哔哩哔哩短链接')
+}
+
 // 登录页可能把原始内容地址保存在 redirectPath 中，只接受站内内容地址。
 function getXiaohongshuContentUrl(url) {
   if (!matchesDomain(url.hostname, supportedDomains.xhslink)) return null
@@ -258,20 +289,34 @@ async function resolveXiaohongshuUrl(url) {
   throw new Error('无法解析小红书内容链接')
 }
 
-// 提取URL
+// 提取 Markdown 的链接目标或纯 URL，避免把链接标签及外层括号发给短链服务。
 function extractUrlFromText(text) {
-  const urlRegex = /(https?:\/\/[^\s]+)/g
-  const matches = text.match(urlRegex)
-  return matches ? matches[0] : null
+  const match = text.match(/(?:\[[^\]\r\n]*\]\(\s*<?)?(https?:\/\/[^\s<>"`]+)/)
+  if (!match) return null
+  let url = match[1]
+  const brackets = { ')': '(', ']': '[', '}': '{' }
+  // 保留 URL 自身配对的括号（例如路径和 IPv6），仅去掉外层文本的结束括号。
+  while (brackets[url.at(-1)]) {
+    const closing = url.at(-1)
+    const opening = brackets[closing]
+    const opens = [...url].filter(char => char === opening).length
+    const closes = [...url].filter(char => char === closing).length
+    if (closes <= opens) break
+    url = url.slice(0, -1)
+  }
+  return url
 }
 
-// 解析短链接：小红书在内容地址处停止，其他服务跟随跳转拿到最终 URL。
+// 解析短链接：小红书和 Bilibili 在目标地址处停止，其他服务跟随跳转拿到最终 URL。
 // 注意：部分短链服务（如 xhslink.com / xhslink.cn）对 HEAD 请求返回 404，只有 GET 才会发出跳转，
 // 因此这里统一使用 GET（不读取响应体，仅取最终 URL）。
 async function resolveUrl(url) {
   try {
     if (isXiaohongshuShortLink(new URL(url))) {
       return await resolveXiaohongshuUrl(url)
+    }
+    if (isBilibiliShortLink(new URL(url))) {
+      return await resolveBilibiliUrl(url)
     }
     const response = await fetch(url, {
       method: 'GET',
@@ -301,6 +346,18 @@ function forceHttps(url) {
 async function processUrlBasedOnDomain(url) {
   const parsedUrl = new URL(url)
   const hostname = parsedUrl.hostname
+
+  // 分 P 是内容定位参数，清理分享追踪时保留非默认分 P。
+  if (matchesDomain(hostname, supportedDomains.bilibili)) {
+    const page = parsedUrl.searchParams.get('p')
+    parsedUrl.search = ''
+    parsedUrl.hash = ''
+    if (/^\/video\//.test(parsedUrl.pathname) && /^[1-9]\d*$/.test(page || '') &&
+        Number.isSafeInteger(Number(page)) && Number(page) > 1) {
+      parsedUrl.searchParams.set('p', page)
+    }
+    return parsedUrl.toString()
+  }
 
   // 保留访问所需参数及其原始来源，不把登录或风控页当作清理结果。
   if (matchesDomain(hostname, supportedDomains.xhslink)) {

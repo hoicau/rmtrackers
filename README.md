@@ -37,6 +37,16 @@ npm run dev      # start a local dev server via Wrangler
 npm run deploy   # deploy to your Cloudflare account
 ```
 
+For all websites, input can contain plain URLs, Markdown links, or angle-bracket
+autolinks. Markdown links use their destination URL, with surrounding markup
+removed before short-link resolution and domain-specific cleaning.
+
+Bilibili short links (`b23.tv` and `bili2233.cn`) are resolved one redirect at a
+time, stopping as soon as they point to a Bilibili URL without fetching the
+content page. Sharing parameters are removed; video part selections (`p=2` and
+above) are preserved. Unresolved short links produce an error instead of being
+presented as cleaned links.
+
 Xiaohongshu short links are resolved one redirect at a time, stopping at the
 first note or profile URL so a later login redirect cannot replace it. Pasted
 login URLs with a valid Xiaohongshu content URL in `redirectPath` are also
